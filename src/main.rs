@@ -4,6 +4,7 @@ use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
 mod cli;
 mod collect;
 mod core;
+mod dump;
 mod module;
 mod process;
 mod profiles;

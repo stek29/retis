@@ -17,6 +17,7 @@ use log::debug;
 use super::dynamic::DynamicCommand;
 use crate::{
     collect::cli::Collect,
+    dump::cli::Dump,
     module::{ModuleId, Modules},
     process::cli::Print,
     process::cli::Sort,
@@ -419,6 +420,7 @@ impl CliConfig {
 pub(crate) fn get_cli() -> Result<ThinCli> {
     let mut cli = ThinCli::new()?;
     cli.add_subcommand(Box::new(Collect::new()?))?;
+    cli.add_subcommand(Box::new(Dump::new()?))?;
     cli.add_subcommand(Box::new(Print::new()?))?;
     cli.add_subcommand(Box::new(Sort::new()?))?;
     cli.add_subcommand(Box::new(ProfileCmd::new()?))?;

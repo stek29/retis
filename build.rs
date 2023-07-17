@@ -172,6 +172,8 @@ fn main() {
     build_probe("src/core/probe/kernel/bpf/raw_tracepoint.bpf.c");
     build_probe("src/core/probe/user/bpf/usdt.bpf.c");
 
+    build_hook("src/dump/bpf/dump.bpf.c", None);
+
     build_hook("src/module/skb/bpf/skb_hook.bpf.c", None);
     build_hook("src/module/skb_drop/bpf/skb_drop_hook.bpf.c", None);
     build_hook("src/module/skb_tracking/bpf/tracking_hook.bpf.c", None);
