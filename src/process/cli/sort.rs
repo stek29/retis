@@ -112,7 +112,7 @@ impl SubCommandParserRunner for Sort {
 
         while run.running() {
             match factory.next_event(None)? {
-                EventResult::Event(mut event) => {
+                FactoryResult::Ok(mut event) => {
                     // Add tracking information
                     tracker.process_one(&mut event)?;
 
@@ -132,8 +132,8 @@ impl SubCommandParserRunner for Sort {
                         }
                     }
                 }
-                EventResult::Eof => break,
-                EventResult::Timeout => continue,
+                FactoryResult::Eof => break,
+                FactoryResult::Timeout => continue,
             }
         }
         // Flush remaining events

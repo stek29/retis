@@ -141,9 +141,9 @@ impl EventFmt for Event {
 pub(crate) type SectionFactories = HashMap<ModuleId, Box<dyn EventSectionFactory>>;
 
 /// The return value of EventFactory::next_event()
-pub(crate) enum EventResult {
+pub(crate) enum FactoryResult<T> {
     /// The Factory was able to create a new event.
-    Event(Event),
+    Ok(T),
     /// The source has been consumed.
     Eof,
     /// The timeout went off but a new attempt to retrieve an event might succeed.
@@ -163,7 +163,7 @@ pub(crate) trait EventFactory {
     /// blocking call and waits for more data. Optionally a timeout can be
     /// given, in such case None can be returned. Specific factories should
     /// document those behaviors.
-    fn next_event(&mut self, timeout: Option<Duration>) -> Result<EventResult>;
+    fn next_event(&mut self, timeout: Option<Duration>) -> Result<FactoryResult<Event>>;
 }
 
 /// Per-module event section, should map 1:1 with a ModuleId. Requiring specific

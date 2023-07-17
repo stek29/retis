@@ -9,7 +9,7 @@ use anyhow::{anyhow, bail, Result};
 use log::error;
 use plain::Plain;
 
-use super::{Event, EventResult};
+use super::{Event, FactoryResult};
 use crate::{
     core::events::*, core::signals::Running, event_section, event_section_factory, module::ModuleId,
 };
@@ -184,7 +184,7 @@ impl EventFactory for BpfEventsFactory {
     }
 
     /// Retrieve the next event. This is a blocking call and never returns EOF.
-    fn next_event(&mut self, timeout: Option<Duration>) -> Result<EventResult> {
+    fn next_event(&mut self, timeout: Option<Duration>) -> Result<FactoryResult<Event>> {
         let rxc = match &self.rxc {
             Some(rxc) => rxc,
             None => bail!("Can't get event, no rx channel found."),
@@ -192,11 +192,11 @@ impl EventFactory for BpfEventsFactory {
 
         Ok(match timeout {
             Some(timeout) => match rxc.recv_timeout(timeout) {
-                Ok(event) => EventResult::Event(event),
-                Err(mpsc::RecvTimeoutError::Timeout) => EventResult::Timeout,
+                Ok(event) => FactoryResult::Ok(event),
+                Err(mpsc::RecvTimeoutError::Timeout) => FactoryResult::Timeout,
                 Err(e) => return Err(anyhow!(e)),
             },
-            None => EventResult::Event(rxc.recv()?),
+            None => FactoryResult::Ok(rxc.recv()?),
         })
     }
 }
@@ -419,8 +419,8 @@ impl EventFactory for BpfEventsFactory {
     fn start(&mut self, _: SectionFactories) -> Result<()> {
         Ok(())
     }
-    fn next_event(&mut self, _: Option<Duration>) -> Result<EventResult> {
-        Ok(EventResult::Event(Event::new()))
+    fn next_event(&mut self, _: Option<Duration>) -> Result<FactoryResult<Event>> {
+        Ok(FactoryResult::Ok(Event::new()))
     }
     fn stop(&mut self) -> Result<()> {
         Ok(())

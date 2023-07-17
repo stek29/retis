@@ -43,12 +43,11 @@ impl SubCommandParserRunner for Print {
         // Formatter & printer for events.
         let mut output = PrintSingle::text(Box::new(stdout()), self.format);
 
-        use EventResult::*;
         while run.running() {
             match factory.next_event(Some(Duration::from_secs(1)))? {
-                Event(event) => output.process_one(&event)?,
-                Eof => break,
-                Timeout => continue,
+                FactoryResult::Ok(event) => output.process_one(&event)?,
+                FactoryResult::Eof => break,
+                FactoryResult::Timeout => continue,
             }
         }
         Ok(())

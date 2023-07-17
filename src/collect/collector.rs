@@ -17,7 +17,7 @@ use crate::core::probe::kernel::{config::init_stack_map, kernel::KernelEventFact
 use crate::{
     cli::{dynamic::DynamicCommand, CliConfig, FullCli},
     core::{
-        events::{bpf::BpfEventsFactory, EventFactory, EventResult},
+        events::{bpf::BpfEventsFactory, EventFactory, FactoryResult},
         filters::{
             filters::{BpfFilter, Filter},
             packets::filter::FilterPacket,
@@ -338,14 +338,13 @@ impl Collectors {
             });
         }
 
-        use EventResult::*;
         while self.run.running() {
             match self.factory.next_event(Some(Duration::from_secs(1)))? {
-                Event(event) => printers
+                FactoryResult::Ok(event) => printers
                     .iter_mut()
                     .try_for_each(|p| p.process_one(&event))?,
-                Eof => break,
-                Timeout => continue,
+                FactoryResult::Eof => break,
+                FactoryResult::Timeout => continue,
             }
         }
 
