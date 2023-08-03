@@ -287,6 +287,28 @@ impl eBpfProg {
 
         Ok(ret)
     }
+
+    fn inline_returns(&mut self) -> Result<()> {
+        let mut eop = self.0.len();
+        let mut rem_pos = Vec::new();
+
+        for (ip, insn) in self.0.iter_mut().enumerate().rev() {
+            if insn.code == bpf_sys::BPF_JMP | bpf_sys::BPF_EXIT {
+                if eop - ip - 1 == 0 {
+                    rem_pos.push(ip);
+                    eop -= 1;
+                    continue;
+                }
+                *insn = eBpfInsn::jmp_a((eop - ip - 1) as i16);
+            }
+        }
+
+        rem_pos.iter().for_each(|p| {
+            self.0.remove(*p);
+        });
+
+        Ok(())
+    }
 }
 
 impl TryFrom<BpfProg> for eBpfProg {
@@ -493,6 +515,8 @@ impl TryFrom<BpfProg> for eBpfProg {
                     - 1,
             )?;
         }
+
+        ebpf.inline_returns()?;
 
         Ok(ebpf)
     }
