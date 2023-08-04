@@ -22,10 +22,9 @@ int probe_kprobe(struct pt_regs *ctx)
 	context.timestamp = bpf_ktime_get_ns();
 	context.ksym = kprobe_get_func_ip(ctx);
 	context.probe_type = KERNEL_PROBE_KPROBE;
-	context.orig_ctx = ctx;
 	get_regs(&context.regs, ctx);
 
-	return chain(&context);
+	return chain(ctx, &context);
 }
 
 char __license[] SEC("license") = "GPL";

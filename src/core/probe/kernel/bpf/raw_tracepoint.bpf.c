@@ -49,10 +49,9 @@ int probe_raw_tracepoint(struct bpf_raw_tracepoint_args *ctx)
 	context.timestamp = bpf_ktime_get_ns();
 	context.ksym = ksym;
 	context.probe_type = KERNEL_PROBE_TRACEPOINT;
-	context.orig_ctx = ctx;
 	get_regs(&context.regs, ctx);
 
-	return chain(&context);
+	return chain(ctx, &context);
 }
 
 char __license[] SEC("license") = "GPL";

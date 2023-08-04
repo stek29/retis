@@ -57,8 +57,6 @@ struct retis_context {
 	u64 ksym;
 	struct retis_probe_offsets offsets;
 	struct retis_regs regs;
-	/* Pointer to the original ctx. Needed for helper calls. */
-	void *orig_ctx;
 	/* Contains the bits identifying what filters yield a hit outcome.
 	 * A bit is set means that the filter matched the data based on its
 	 * criteria .

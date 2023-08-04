@@ -62,13 +62,13 @@ static __always_inline void send_event(struct retis_raw_event *event)
 }
 
 static __always_inline void *get_event_section(struct retis_raw_event *event,
-					       u8 owner, u8 data_type, u16 size)
+					       u8 owner, u8 data_type, const u16 size)
 {
 	struct retis_raw_event_section_header *header;
-	u16 left = RAW_EVENT_DATA_SIZE - event->size;
 	void *section;
 
-	if (sizeof(*header) + size > left || event->size > sizeof(event->data))
+	barrier_var(event);
+	if (event->size + sizeof(*header) + size > sizeof(event->data))
 		return NULL;
 
 	header = (struct retis_raw_event_section_header *)
