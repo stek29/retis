@@ -65,7 +65,7 @@ impl Inspector {
         let mut id = None;
         let mut version = None;
         // https://www.freedesktop.org/software/systemd/man/os-release.html
-        if let Ok(file) = fs::read_to_string(if !cfg!(test) {
+        if let Ok(file) = fs::read_to_string(if !cfg!(test) || cfg!(feature = "benchmark") {
             "/etc/os-release"
         } else {
             "test_data/os-release"
