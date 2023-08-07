@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 /// Returns a translation of some ethertypes into a readable format.
 pub(super) fn etype_str(etype: u16) -> Option<&'static str> {
@@ -67,6 +67,44 @@ pub(super) fn parse_eth_addr(raw: &[u8; 6]) -> Result<String> {
     raw.iter().enumerate().for_each(|(i, group)| {
         handle_group(&mut addr, *group, i);
     });
+
+    Ok(String::from_utf8(addr)?)
+}
+
+/// Parses an IPv4 address into a String.
+pub(super) fn parse_ipv4_addr(raw: u32) -> Result<String> {
+    let u4_to_utf8 = |u4| -> Result<u8> {
+        Ok(match u4 {
+            x if x < 10 => b'0' + x,
+            _ => bail!("Invalid input"),
+        })
+    };
+
+    let handle_group = |vec: &mut Vec<u8>, byte, i| -> Result<()> {
+        let res = byte / 100;
+        if res > 0 {
+            vec.push(u4_to_utf8(res)?);
+        };
+
+        let res = (byte % 100) / 10;
+        if res > 0 {
+            vec.push(u4_to_utf8(res)?);
+        };
+
+        vec.push(u4_to_utf8(byte % 10)?);
+
+        if i < 3 {
+            vec.push(b'.');
+        }
+
+        Ok(())
+    };
+
+    let mut addr = Vec::with_capacity(15);
+    handle_group(&mut addr, (raw >> 24) as u8, 0)?;
+    handle_group(&mut addr, ((raw >> 16) & 0xff) as u8, 1)?;
+    handle_group(&mut addr, ((raw >> 8) & 0xff) as u8, 2)?;
+    handle_group(&mut addr, (raw & 0xff) as u8, 3)?;
 
     Ok(String::from_utf8(addr)?)
 }
