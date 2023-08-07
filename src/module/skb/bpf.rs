@@ -52,8 +52,8 @@ pub(super) fn unmarshal_eth(raw_section: &BpfRawSection) -> Result<SkbEthEvent> 
 
     Ok(SkbEthEvent {
         etype: u16::from_be(raw.etype),
-        src: helpers::parse_eth_addr(&raw.src),
-        dst: helpers::parse_eth_addr(&raw.dst),
+        src: helpers::parse_eth_addr(&raw.src)?,
+        dst: helpers::parse_eth_addr(&raw.dst)?,
     })
 }
 
@@ -86,9 +86,9 @@ pub(super) fn unmarshal_arp(raw_section: &BpfRawSection) -> Result<SkbArpEvent> 
 
     Ok(SkbArpEvent {
         operation,
-        sha: helpers::parse_eth_addr(&raw.sha),
+        sha: helpers::parse_eth_addr(&raw.sha)?,
         spa: format!("{spa}"),
-        tha: helpers::parse_eth_addr(&raw.tha),
+        tha: helpers::parse_eth_addr(&raw.tha)?,
         tpa: format!("{tpa}"),
     })
 }

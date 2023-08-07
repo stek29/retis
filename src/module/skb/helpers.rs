@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 /// Returns a translation of some ethertypes into a readable format.
 pub(super) fn etype_str(etype: u16) -> Option<&'static str> {
     Some(match etype {
@@ -46,9 +48,25 @@ pub(super) fn protocol_str(protocol: u8) -> Option<&'static str> {
 }
 
 /// Parses an Ethernet address into a String.
-pub(super) fn parse_eth_addr(raw: &[u8; 6]) -> String {
-    format!(
-        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        raw[0], raw[1], raw[2], raw[3], raw[4], raw[5],
-    )
+pub(super) fn parse_eth_addr(raw: &[u8; 6]) -> Result<String> {
+    let u4_to_utf8 = |u4| -> u8 {
+        match u4 {
+            x if x < 10 => b'0' + x,
+            x => b'a' + (x - 10),
+        }
+    };
+    let handle_group = |vec: &mut Vec<u8>, group, i| {
+        vec.push(u4_to_utf8(group >> 4));
+        vec.push(u4_to_utf8(group & 0xf));
+        if i < 5 {
+            vec.push(b':');
+        }
+    };
+
+    let mut addr = Vec::with_capacity(18);
+    raw.iter().enumerate().for_each(|(i, group)| {
+        handle_group(&mut addr, *group, i);
+    });
+
+    Ok(String::from_utf8(addr)?)
 }
