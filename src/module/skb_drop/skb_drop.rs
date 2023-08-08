@@ -78,6 +78,6 @@ impl Module for SkbDropModule {
         self
     }
     fn section_factory(&self) -> Result<Box<dyn EventSectionFactory>> {
-        Ok(Box::<SkbDropEventFactory>::default())
+        Ok(Box::new(SkbDropEventFactory::new()?))
     }
 }
