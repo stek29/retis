@@ -12,6 +12,9 @@
 #include <packet_filter.h>
 #include <skb_tracking.h>
 
+/* Always include last */
+#include <benchmark.h>
+
 /* Kernel section of the event data. */
 struct kernel_event {
 	u64 symbol;
@@ -290,6 +293,9 @@ static __always_inline int chain(void *orig_ctx, struct retis_context *ctx)
 			k->stack_id = bpf_get_stackid(orig_ctx, &stack_map, BPF_F_FAST_STACK_CMP);
 		else
 			k->stack_id = -1;
+
+		if (fill_benchmark_event(event, ctx) < 0)
+			goto discard_event;
 
 		send_event(event);
 	} else {

@@ -6,6 +6,8 @@ use super::{
     nft::NftModule, ovs::OvsModule, skb::SkbModule, skb_drop::SkbDropModule,
     skb_tracking::SkbTrackingModule,
 };
+#[cfg(feature = "benchmark")]
+use crate::benchmark::events::BenchmarkEventFactory;
 use crate::{
     collect::Collector,
     core::{
@@ -27,8 +29,9 @@ pub(crate) enum ModuleId {
     Skb = 7,
     Ovs = 8,
     Nft = 9,
+    Benchmark = 10,
     // TODO: use std::mem::variant_count once in stable.
-    _MAX = 10,
+    _MAX = 11,
 }
 
 impl ModuleId {
@@ -46,6 +49,7 @@ impl ModuleId {
             7 => Skb,
             8 => Ovs,
             9 => Nft,
+            10 => Benchmark,
             x => bail!("Can't construct a ModuleId from {}", x),
         })
     }
@@ -65,7 +69,8 @@ impl ModuleId {
             Skb => 7,
             Ovs => 8,
             Nft => 9,
-            _MAX => 10,
+            Benchmark => 10,
+            _MAX => 11,
         }
     }
 
@@ -82,6 +87,7 @@ impl ModuleId {
             "skb" => Skb,
             "ovs" => Ovs,
             "nft" => Nft,
+            "benchmark" => Benchmark,
             x => bail!("Can't construct a ModuleId from {}", x),
         })
     }
@@ -99,6 +105,7 @@ impl ModuleId {
             Skb => "skb",
             Ovs => "ovs",
             Nft => "nft",
+            Benchmark => "benchmark",
             _MAX => "_max",
         }
     }
@@ -181,6 +188,8 @@ impl Modules {
             ModuleId::Tracking,
             Box::<TrackingInfoEventFactory>::default(),
         );
+        #[cfg(feature = "benchmark")]
+        section_factories.insert(ModuleId::Benchmark, Box::<BenchmarkEventFactory>::default());
 
         for (id, module) in self.modules.iter() {
             section_factories.insert(*id, module.section_factory()?);

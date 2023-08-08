@@ -8,7 +8,7 @@ use crate::{benchmark::*, cli::*, module::Modules};
 #[command(name = "benchmark")]
 pub(crate) struct Benchmark {
     #[arg(
-        value_parser=PossibleValuesParser::new(["events_parsing", "events_output"]),
+        value_parser=PossibleValuesParser::new(["events_parsing", "events_output", "bpf_inject"]),
         help = "Benchmark to run",
     )]
     pub(super) r#type: String,
@@ -19,6 +19,7 @@ impl SubCommandParserRunner for Benchmark {
         match self.r#type.as_str() {
             "events_parsing" => events_parsing::bench()?,
             "events_output" => events_output::bench()?,
+            "bpf_inject" => bpf_inject::bench()?,
             x => bail!("Unknown benchmark '{x}'"),
         }
 

@@ -15,6 +15,7 @@ const INCLUDE_PATHS: &[&str] = &[
     "src/core/probe/bpf/include",
     "src/core/probe/kernel/bpf/include",
     "src/core/probe/user/bpf/include",
+    "src/benchmark/bpf/include",
     "src/core/events/bpf/include",
     "src/core/tracking/bpf/include",
     // Taking errno.h from libc instead of linux headers.
@@ -42,6 +43,11 @@ fn get_probe_clang_args(extra_includes: Option<&[&str]>) -> String {
             .map(|x| format!("-I{x} "))
             .collect::<String>(),
     );
+
+    if cfg!(feature = "benchmark") {
+        args.push("-D RETIS_ENABLE_BENCHMARK".to_string());
+    }
+
     args.join(" ")
 }
 

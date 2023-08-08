@@ -262,6 +262,7 @@ impl Collectors {
         // Attach probes and start collectors.
         self.probes.attach()?;
 
+        // FIXME.
         self.modules.collectors().iter_mut().for_each(|(id, c)| {
             if c.start().is_err() {
                 warn!("Could not start collector '{id}'");
