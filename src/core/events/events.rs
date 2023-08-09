@@ -154,7 +154,9 @@ pub(crate) enum EventResult {
 /// etc).
 pub(crate) trait EventFactory {
     /// Starts the factory events collection.
-    fn start(&mut self, section_factories: SectionFactories) -> Result<()>;
+    fn start<F>(&mut self, section_factories: F) -> Result<()>
+    where
+        F: Fn() -> SectionFactories;
     /// Stops the factory events collection.
     fn stop(&mut self) -> Result<()>;
     /// Gets the next Event.

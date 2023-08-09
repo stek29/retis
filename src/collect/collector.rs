@@ -1,5 +1,3 @@
-#[cfg(not(test))]
-use std::os::fd::{AsFd, AsRawFd};
 use std::{
     collections::HashSet,
     fs::OpenOptions,
@@ -15,8 +13,6 @@ use nix::unistd::Uid;
 use super::cli::Collect;
 use crate::{cli::SubCommandRunner, process::display::PrintSingle};
 
-#[cfg(not(test))]
-use crate::core::probe::kernel::{config::init_stack_map, kernel::KernelEventFactory};
 use crate::{
     cli::{dynamic::DynamicCommand, CliConfig, FullCli},
     core::{
@@ -95,7 +91,7 @@ pub(crate) struct Collectors {
 impl Collectors {
     #[allow(unused_mut)] // For tests.
     fn new(mut modules: Modules) -> Result<Self> {
-        let factory = BpfEventsFactory::new()?;
+        let factory = BpfEventsFactory::new(4)?;
 
         #[cfg(not(test))]
         let mut probes = probe::ProbeManager::new()?;
@@ -232,25 +228,13 @@ impl Collectors {
     pub(crate) fn start(&mut self) -> Result<()> {
         // Create factories.
         #[cfg_attr(test, allow(unused_mut))]
-        let mut section_factories = self.modules.section_factories()?;
+        let section_factories = || self.modules.section_factories().unwrap();
 
         #[cfg(not(test))]
-        {
-            let sm = init_stack_map()?;
-            self.probes.reuse_map("stack_map", sm.as_fd().as_raw_fd())?;
-            self.probes.reuse_map("events_map", self.factory.map_fd())?;
-            match section_factories.get_mut(&ModuleId::Kernel) {
-                Some(kernel_factory) => {
-                    kernel_factory
-                        .as_any_mut()
-                        .downcast_mut::<KernelEventFactory>()
-                        .ok_or_else(|| anyhow!("Failed to downcast KernelEventFactory"))?
-                        .stack_map = Some(sm)
-                }
-
-                None => bail!("Can't get kernel section factory"),
-            }
-        }
+        self.factory
+            .maps_fd()
+            .iter()
+            .try_for_each(|(name, fd)| self.probes.reuse_map(name, *fd))?;
 
         if let Some(gc) = &mut self.tracking_gc {
             gc.start(self.run.clone())?;

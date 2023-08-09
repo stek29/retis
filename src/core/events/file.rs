@@ -35,8 +35,11 @@ impl FileEventsFactory {
 }
 
 impl EventFactory for FileEventsFactory {
-    fn start(&mut self, section_factories: SectionFactories) -> Result<()> {
-        self.factories = section_factories;
+    fn start<F>(&mut self, section_factories: F) -> Result<()>
+    where
+        F: Fn() -> SectionFactories,
+    {
+        self.factories = section_factories();
         Ok(())
     }
 

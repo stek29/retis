@@ -1,6 +1,9 @@
-use std::mem;
+use std::{
+    mem,
+    os::fd::{AsFd, AsRawFd},
+};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use crate::core::probe::PROBE_MAX;
 
@@ -60,24 +63,59 @@ pub(crate) fn init_config_map() -> Result<libbpf_rs::MapHandle> {
     )?)
 }
 
+/// Returns a map of map configured with `count` stack maps indexed from `0` to
+/// `count - 1`.
 #[cfg(not(test))]
-pub(crate) fn init_stack_map() -> Result<libbpf_rs::MapHandle> {
+pub(crate) fn init_stack_maps(
+    count: u32,
+) -> Result<(libbpf_rs::MapHandle, Vec<libbpf_rs::MapHandle>)> {
     const MAX_STACKTRACE_ENTRIES: u32 = 256;
     const PERF_MAX_STACK_DEPTH: usize = 127;
 
-    let opts = libbpf_sys::bpf_map_create_opts {
+    let mut opts = libbpf_sys::bpf_map_create_opts {
         sz: mem::size_of::<libbpf_sys::bpf_map_create_opts>() as libbpf_sys::size_t,
         ..Default::default()
     };
 
-    // Please keep in sync with its BPF counterpart in
-    // core/probe/kernel/bpf/include/common.h
-    Ok(libbpf_rs::MapHandle::create(
-        libbpf_rs::MapType::StackTrace,
-        Some("stack_map"),
+    // Stack maps.
+    let mut maps = Vec::new();
+    for i in 0..count {
+        let sm = libbpf_rs::MapHandle::create(
+            libbpf_rs::MapType::StackTrace,
+            Some(format!("stack_map_{i}").as_str()),
+            mem::size_of::<u32>() as u32,
+            (mem::size_of::<u64>() * PERF_MAX_STACK_DEPTH) as u32,
+            MAX_STACKTRACE_ENTRIES,
+            &opts,
+        )
+        .or_else(|e| bail!("Failed to create stack map: {}", e))?;
+
+        maps.push(sm);
+    }
+
+    // The verifier uses the inner_map_fd to check the main map is used
+    // correctly.
+    opts.inner_map_fd = maps.get(0).unwrap().as_fd().as_raw_fd() as u32;
+
+    // Main map (of stack maps).
+    let main = libbpf_rs::MapHandle::create(
+        libbpf_rs::MapType::ArrayOfMaps,
+        Some("events_map"),
         mem::size_of::<u32>() as u32,
-        (mem::size_of::<u64>() * PERF_MAX_STACK_DEPTH) as u32,
-        MAX_STACKTRACE_ENTRIES,
+        mem::size_of::<u32>() as u32,
+        count,
         &opts,
-    )?)
+    )
+    .or_else(|e| bail!("Failed to create main stack map map: {}", e))?;
+
+    // Add stack maps to the main one.
+    maps.iter().enumerate().try_for_each(|(i, map)| {
+        main.update(
+            &(i as u32).to_ne_bytes(),
+            &map.as_fd().as_raw_fd().to_ne_bytes(),
+            libbpf_rs::MapFlags::ANY,
+        )
+    })?;
+
+    Ok((main, maps))
 }

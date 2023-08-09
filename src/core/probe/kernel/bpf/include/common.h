@@ -39,14 +39,24 @@ struct {
 	__type(value, struct retis_probe_config);
 } config_map SEC(".maps");
 
-/* Probe stack trace map. */
-struct {
+/* Per-cpu probe stack trace map. */
+struct pcpu_stack_map {
 	__uint(type, BPF_MAP_TYPE_STACK_TRACE);
 	__uint(max_entries, 256);
 	__uint(key_size, sizeof(u32));
 	/* PERF_MAX_STACK_DEPTH times u64 for value size. */
 	__uint(value_size, 127 * sizeof(u64));
-} stack_map SEC(".maps");
+} pcpu_stack_map SEC(".maps");
+
+/* Map of stack maps */
+struct {
+        __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+        __uint(max_entries, 1);        /* Real value will be set by userspace */
+        __type(key, u32);
+        __array(values, struct pcpu_stack_map);
+} stack_map SEC(".maps") = {
+       .values = { &pcpu_stack_map, },
+};
 
 #define RETIS_F_PASS(f, v)			\
 	RETIS_F_##f##_PASS_SH = v,		\
@@ -289,10 +299,19 @@ static __always_inline int chain(void *orig_ctx, struct retis_context *ctx)
 
 		k->symbol = ctx->ksym;
 		k->type = ctx->probe_type;
-		if (cfg->stack_trace)
-			k->stack_id = bpf_get_stackid(orig_ctx, &stack_map, BPF_F_FAST_STACK_CMP);
-		else
+		if (cfg->stack_trace) {
+			struct pcpu_stack_map *map;
+			u32 key;
+
+			key = bpf_get_smp_processor_id() % events_map_count;
+			map = bpf_map_lookup_elem(&stack_map, &key);
+			if (!map)
+				goto discard_event;
+
+			k->stack_id = bpf_get_stackid(orig_ctx, map, BPF_F_FAST_STACK_CMP);
+		} else {
 			k->stack_id = -1;
+		}
 
 		if (fill_benchmark_event(event, ctx) < 0)
 			goto discard_event;

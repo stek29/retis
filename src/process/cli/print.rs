@@ -38,7 +38,7 @@ impl SubCommandParserRunner for Print {
 
         // Create event factory.
         let mut factory = FileEventsFactory::new(self.input.as_path())?;
-        factory.start(modules.section_factories()?)?;
+        factory.start(|| modules.section_factories().unwrap())?;
 
         // Formatter & printer for events.
         let mut output = PrintSingle::text(Box::new(stdout()), self.format);

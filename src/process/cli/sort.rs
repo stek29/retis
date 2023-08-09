@@ -70,7 +70,7 @@ impl SubCommandParserRunner for Sort {
 
         // Create event factory.
         let mut factory = FileEventsFactory::new(self.input.as_path())?;
-        factory.start(modules.section_factories()?)?;
+        factory.start(|| modules.section_factories().unwrap())?;
 
         let mut series = EventSorter::new();
         let mut tracker = AddTracking::new();

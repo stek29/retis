@@ -36,7 +36,7 @@ pub(super) fn bench() -> Result<()> {
     // Setup the core API.
     let mut run = Running::new();
     let mut modules = get_modules()?;
-    let mut factory = BpfEventsFactory::new()?;
+    let mut factory = BpfEventsFactory::new(4)?;
     let mut probes = probe::ProbeManager::new()?;
 
     // Init the cli.
@@ -62,13 +62,15 @@ pub(super) fn bench() -> Result<()> {
     }
 
     // Initialize tracking.
-    let (mut tracking_gc, _) = init_tracking(&mut probes)?;
+    let (mut tracking_gc, _gc_map) = init_tracking(&mut probes)?;
     tracking_gc.start(run.clone())?;
 
     // Setup factory.
-    let section_factories = modules.section_factories()?;
-    probes.reuse_map("events_map", factory.map_fd())?;
-    factory.start(section_factories)?;
+    factory
+        .maps_fd()
+        .iter()
+        .try_for_each(|(name, fd)| probes.reuse_map(name, *fd))?;
+    factory.start(|| modules.section_factories().unwrap())?;
 
     // Set a filter.
     let fb = FilterPacket::from_string("icmp and ip src 127.0.0.1".to_string())?;

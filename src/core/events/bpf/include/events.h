@@ -34,17 +34,37 @@ struct retis_raw_event_section_header {
 	u16 size;
 } __attribute__((packed));
 
+/* Number of ringbuffers */
+const volatile u32 events_map_count = 4;
+
 /* Please keep synced with its Rust counterpart. */
-struct {
+struct rb_events_map {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
 	__uint(max_entries, sizeof(struct retis_raw_event) * EVENTS_MAX);
-} events_map SEC(".maps");
+} rb_events_map SEC(".maps");
+
+/* Please keep synced with its Rust counterpart. */
+struct {
+        __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+        __uint(max_entries, 1);	/* Real value will be set by userspace */
+        __type(key, u32);
+        __array(values, struct rb_events_map);
+} events_map SEC(".maps") = {
+	.values = { &rb_events_map, },
+};
 
 static __always_inline struct retis_raw_event *get_event()
 {
 	struct retis_raw_event *event;
+	struct rb_events_map *rb;
+	u32 key;
 
-	event = bpf_ringbuf_reserve(&events_map, sizeof(*event), 0);
+	key = bpf_get_smp_processor_id() % events_map_count;
+	rb = bpf_map_lookup_elem(&events_map, &key);
+	if (!rb)
+		return NULL;
+
+	event = bpf_ringbuf_reserve(rb, sizeof(*event), 0);
 	if (!event)
 		return NULL;
 

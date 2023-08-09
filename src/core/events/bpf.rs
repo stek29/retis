@@ -18,7 +18,13 @@ use plain::Plain;
 
 use super::{Event, EventResult};
 use crate::{
-    core::events::*, core::signals::Running, event_section, event_section_factory, module::ModuleId,
+    core::{
+        events::*,
+        probe::kernel::{config::init_stack_maps, kernel::KernelEventFactory},
+        signals::Running,
+    },
+    event_section, event_section_factory,
+    module::ModuleId,
 };
 
 /// Raw event sections for common.
@@ -70,6 +76,9 @@ macro_rules! event_byte_array {
 #[cfg(not(test))]
 pub(crate) struct BpfEventsFactory {
     map: libbpf_rs::MapHandle,
+    ringbufs: Vec<libbpf_rs::MapHandle>,
+    stack_map: libbpf_rs::MapHandle,
+    stack_percpu_maps: Vec<libbpf_rs::MapHandle>,
     /// Receiver channel to retrieve events from the processing loop.
     rxc: Option<mpsc::Receiver<Event>>,
     /// Polling thread handle.
@@ -79,24 +88,60 @@ pub(crate) struct BpfEventsFactory {
 
 #[cfg(not(test))]
 impl BpfEventsFactory {
-    pub(crate) fn new() -> Result<BpfEventsFactory> {
-        let opts = libbpf_sys::bpf_map_create_opts {
+    pub(crate) fn new(maps_count: u32) -> Result<BpfEventsFactory> {
+        let mut opts = libbpf_sys::bpf_map_create_opts {
             sz: mem::size_of::<libbpf_sys::bpf_map_create_opts>() as libbpf_sys::size_t,
             ..Default::default()
         };
 
+        // Ringbuffers.
+        let mut ringbufs = Vec::new();
+        for i in 0..maps_count {
+            let rb = libbpf_rs::MapHandle::create(
+                libbpf_rs::MapType::RingBuf,
+                Some(format!("events_map_{i}").as_str()),
+                0,
+                0,
+                mem::size_of::<RawEvent>() as u32 * BPF_EVENTS_MAX,
+                &opts,
+            )
+            .or_else(|e| bail!("Failed to create ringbuf events map: {}", e))?;
+
+            ringbufs.push(rb);
+        }
+
+        // The verifier uses the inner_map_fd to check the main map is used
+        // correclty.
+        opts.inner_map_fd = ringbufs.get(0).unwrap().as_fd().as_raw_fd() as u32;
+
+        // Main map (of maps).
         let map = libbpf_rs::MapHandle::create(
-            libbpf_rs::MapType::RingBuf,
+            libbpf_rs::MapType::ArrayOfMaps,
             Some("events_map"),
-            0,
-            0,
-            mem::size_of::<RawEvent>() as u32 * BPF_EVENTS_MAX,
+            mem::size_of::<u32>() as u32,
+            mem::size_of::<u32>() as u32,
+            maps_count,
             &opts,
         )
         .or_else(|e| bail!("Failed to create events map: {}", e))?;
 
+        // Add ringbuf maps to the main map
+        ringbufs.iter().enumerate().try_for_each(|(i, rb)| {
+            map.update(
+                &(i as u32).to_ne_bytes(),
+                &rb.as_fd().as_raw_fd().to_ne_bytes(),
+                libbpf_rs::MapFlags::ANY,
+            )
+        })?;
+
+        // Init stack maps (for kernel factory).
+        let (stack_map, stack_percpu_maps) = init_stack_maps(maps_count)?;
+
         Ok(BpfEventsFactory {
             map,
+            ringbufs,
+            stack_map,
+            stack_percpu_maps,
             rxc: None,
             handle: None,
             run_state: Running::new(),
@@ -104,8 +149,11 @@ impl BpfEventsFactory {
     }
 
     /// Get the events map fd for reuse.
-    pub(crate) fn map_fd(&self) -> RawFd {
-        self.map.as_fd().as_raw_fd()
+    pub(crate) fn maps_fd(&self) -> HashMap<String, RawFd> {
+        HashMap::from([
+            ("events_map".to_string(), self.map.as_fd().as_raw_fd()),
+            ("stack_map".to_string(), self.stack_map.as_fd().as_raw_fd()),
+        ])
     }
 }
 
@@ -113,53 +161,74 @@ impl BpfEventsFactory {
 impl EventFactory for BpfEventsFactory {
     /// This starts the event polling mechanism. A dedicated thread is started
     /// for events to be retrieved and processed.
-    fn start(&mut self, mut section_factories: SectionFactories) -> Result<()> {
-        if section_factories.is_empty() {
-            bail!("No section factory, can't parse events, aborting");
-        }
-
+    fn start<F>(&mut self, section_factories: F) -> Result<()>
+    where
+        F: Fn() -> SectionFactories,
+    {
         // Create the sending and receiving channels.
         let (txc, rxc) = mpsc::channel();
         self.rxc = Some(rxc);
 
-        let run_state = self.run_state.clone();
-        // Closure to handle the raw events coming from the BPF part.
-        let process_event = move |data: &[u8]| -> i32 {
-            // If a termination signal got received, return (EINTR)
-            // from the callback in order to trigger the event thread
-            // termination. This is useful in the case we're
-            // processing a huge number of buffers and rb.poll() never
-            // times out.
-            if !run_state.running() {
-                return -4;
-            }
-            // Parse the raw event.
-            let event = match parse_raw_event(data, &mut section_factories) {
-                Ok(event) => event,
-                Err(e) => {
-                    error!("Could not parse raw event: {}", e);
-                    return 0;
-                }
-            };
-
-            // Send the event into the events channel for future retrieval.
-            if let Err(e) = txc.send(event) {
-                error!("Could not send event: {}", e);
-            }
-
-            0
-        };
-
         // Finally make our ring buffer and associate our map to our event
         // processing closure.
-        let mut rb = libbpf_rs::RingBufferBuilder::new();
-        rb.add(&self.map, process_event)?;
-        let rb = rb.build()?;
-        let rs = self.run_state.clone();
+        let mut builder = libbpf_rs::RingBufferBuilder::new();
+        for rb in self.ringbufs.iter() {
+            let mut section_factories = section_factories();
+
+            // Transfer ownership of per-cpu stack maps to the kernel factory.
+            match section_factories.get_mut(&ModuleId::Kernel) {
+                Some(kernel_factory) => {
+                    // By design self.ringbufs.len() == self.stack_percpu_maps.len()
+                    // Remove the first element until the map is empty.
+                    let sm = self.stack_percpu_maps.remove(0);
+                    kernel_factory
+                        .as_any_mut()
+                        .downcast_mut::<KernelEventFactory>()
+                        .ok_or_else(|| anyhow!("Failed to downcast KernelEventFactory"))?
+                        .stack_map = Some(sm)
+                }
+                None => bail!("Can't get kernel section factory"),
+            }
+
+            let txc = txc.clone();
+            let run_state = self.run_state.clone();
+
+            // Closure to handle the raw events coming from the BPF part.
+            let process_event = move |data: &[u8]| -> i32 {
+                // If a termination signal got received, return (EINTR)
+                // from the callback in order to trigger the event thread
+                // termination. This is useful in the case we're
+                // processing a huge number of buffers and rb.poll() never
+                // times out.
+                if !run_state.running() {
+                    return -4;
+                }
+                // Parse the raw event.
+                let event = match parse_raw_event(data, &mut section_factories) {
+                    Ok(event) => event,
+                    Err(e) => {
+                        error!("Could not parse raw event: {}", e);
+                        return 0;
+                    }
+                };
+
+                // Send the event into the events channel for future retrieval.
+                if let Err(e) = txc.send(event) {
+                    error!("Could not send event: {}", e);
+                }
+
+                0
+            };
+
+            builder.add(rb, process_event)?;
+        }
+        let builder = builder.build()?;
+
         // Start an event polling thread.
+        let rs = self.run_state.clone();
         self.handle = Some(thread::spawn(move || {
             while rs.running() {
-                if let Err(e) = rb.poll(Duration::from_millis(BPF_EVENTS_POLL_TIMEOUT_MS)) {
+                if let Err(e) = builder.poll(Duration::from_millis(BPF_EVENTS_POLL_TIMEOUT_MS)) {
                     match e {
                         // Received EINTR while polling the
                         // ringbuffer. This could normally be
@@ -408,8 +477,8 @@ impl BpfEventsFactory {
     pub(crate) fn new() -> Result<BpfEventsFactory> {
         Ok(BpfEventsFactory {})
     }
-    pub(crate) fn map_fd(&self) -> i32 {
-        0
+    pub(crate) fn maps_fd(&self) -> HashMap<String, RawFd> {
+        HashMap::new()
     }
 }
 #[cfg(test)]

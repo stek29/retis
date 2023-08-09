@@ -15,7 +15,7 @@ pub(super) fn bench() -> Result<()> {
     // PrintSingle benchmark
 
     let mut factory = FileEventsFactory::new("test_data/test_events.json")?;
-    factory.start(modules.section_factories()?)?;
+    factory.start(|| modules.section_factories().unwrap())?;
     let event = match factory.next_event(None)? {
         EventResult::Event(event) => event,
         _ => bail!("Could not get event from test file"),
@@ -54,7 +54,7 @@ pub(super) fn bench() -> Result<()> {
     // PrintSeries benchmark
 
     let mut factory = FileEventsFactory::new("test_data/test_events.json")?;
-    factory.start(modules.section_factories()?)?;
+    factory.start(|| modules.section_factories().unwrap())?;
     let mut tracker = AddTracking::new();
     let mut series = EventSorter::new();
 
