@@ -5,7 +5,7 @@ use std::{
     os::fd::AsRawFd,
     sync::{Arc, Barrier},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{bail, Result};
@@ -62,7 +62,7 @@ pub(super) fn bench() -> Result<()> {
     }
 
     // Initialize tracking.
-    let mut tracking_gc = init_tracking(&mut probes)?;
+    let (mut tracking_gc, _) = init_tracking(&mut probes)?;
     tracking_gc.start(run.clone())?;
 
     // Setup factory.
@@ -106,6 +106,9 @@ pub(super) fn bench() -> Result<()> {
     let mut time_spent = 0;
     let mut events = 0;
     barrier.wait();
+
+    let now = Instant::now();
+
     while run.running() {
         use EventResult::*;
         if let Ok(event) = factory.next_event(Some(Duration::from_secs(1))) {
@@ -117,6 +120,9 @@ pub(super) fn bench() -> Result<()> {
 
                     time_spent += section.probe_end - section.probe_start;
                     events += 1;
+                    if events == 1000000 {
+                        println!("1M_events_reported_us {}", now.elapsed().as_micros());
+                    }
                 }
                 Eof => break,
                 Timeout => continue,
