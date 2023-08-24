@@ -7,7 +7,7 @@ use std::os::fd::RawFd;
 use anyhow::{anyhow, Result};
 
 use crate::core::{
-    filters::{Filter, register_filter},
+    filters::{register_filter, Filter},
     probe::*,
 };
 
@@ -53,7 +53,9 @@ pub(super) fn reuse_map_fds(
 pub(super) fn replace_filters(filters: &[Filter]) -> Result<()> {
     for filter in filters.iter() {
         match filter {
-            Filter::Packet(_) => register_filter(0xdeadbeef, filter)?,
+            Filter::Packet(_) => {
+                register_filter(0xdeadbeef, filter)?;
+            }
         }
     }
 

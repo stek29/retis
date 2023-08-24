@@ -91,6 +91,9 @@ struct retis_filter_ctx {
 pub(crate) struct eBpfProg(Vec<eBpfInsn>);
 
 impl eBpfProg {
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
     pub(crate) fn add(&mut self, insn: eBpfInsn) {
         self.0.push(insn);
     }

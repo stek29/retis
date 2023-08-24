@@ -13,9 +13,11 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use anyhow::{anyhow, bail, Result};
 use libbpf_rs::skel::SkelBuilder;
 
-use crate::core::filters::Filter;
-use crate::core::probe::builder::*;
-use crate::core::probe::*;
+use crate::core::{
+    filters::{packets::filter::prepare_load, register_filter_handler, Filter},
+    probe::builder::*,
+    probe::*,
+};
 
 mod kretprobe_bpf {
     include!("bpf/.out/kretprobe.skel.rs");
@@ -43,11 +45,18 @@ impl ProbeBuilder for KretprobeBuilder {
             bail!("Kretprobe builder already initialized");
         }
 
+        register_filter_handler(
+            "kretprobe/probe",
+            libbpf_rs::ProgramType::Kprobe,
+            Some(prepare_load),
+        )?;
         let mut skel = KretprobeSkelBuilder::default().open()?;
         skel.rodata().nhooks = hooks.len() as u32;
 
         let open_obj = skel.obj;
         reuse_map_fds(&open_obj, &map_fds)?;
+
+        replace_filters(&filters)?;
 
         let obj = open_obj.load()?;
         let fd = obj
@@ -55,7 +64,6 @@ impl ProbeBuilder for KretprobeBuilder {
             .ok_or_else(|| anyhow!("Couldn't get program"))?
             .as_fd()
             .as_raw_fd();
-        replace_filters(&filters)?;
         let mut links = replace_hooks(fd, &hooks)?;
         self.links.append(&mut links);
 
