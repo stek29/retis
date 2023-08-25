@@ -3,7 +3,6 @@ use std::{
     fs::{create_dir_all, File},
     io::Write,
     path::Path,
-    process::Command,
 };
 
 use libbpf_cargo::SkeletonBuilder;
@@ -123,48 +122,6 @@ fn gen_bindings() {
         .expect("Failed writing bindings");
 }
 
-fn build_extract_stub(source: &str) {
-    let (out, name) = get_paths(source);
-    let output = format!("{}/{}.o", out.as_str(), name);
-    let btf = format!("{out}/{name}.BTF");
-    let stub_ext = format!("{}/{}.rs", out.as_str(), name);
-
-    if let Err(e) = SkeletonBuilder::new()
-        .source(source)
-        .obj(output.as_str())
-        .clang_args(format!("-I{FILTER_INCLUDE_PATH} "))
-        .build()
-    {
-        panic!("{:?}", e);
-    }
-
-    if !Command::new("llvm-objcopy")
-        .args([
-            "-O",
-            "binary",
-            "--set-section-flags",
-            ".BTF=alloc",
-            "-j",
-            ".BTF",
-            output.as_str(),
-        ])
-        .arg(&btf)
-        .status()
-        .expect("Failed to extract .BTF from stub ELF")
-        .success()
-    {
-        panic!("Binutils failed to generate BTF file");
-    }
-
-    let obj = File::open(&btf).unwrap();
-    let obj: &[u8] = &unsafe { Mmap::map(&obj).unwrap() };
-
-    let mut rs = File::create(stub_ext).unwrap();
-    write!(rs, r#"pub(crate) const BTF: &[u8] = &{obj:?};"#).unwrap();
-
-    println!("cargo:rerun-if-changed={source}");
-}
-
 fn main() {
     gen_bindings();
 
@@ -208,7 +165,6 @@ fn main() {
     build_hook("src/module/ovs/bpf/user_op_exec.bpf.c", Some(OVS_INCLUDES));
     build_hook("src/module/ovs/bpf/user_op_put.bpf.c", Some(OVS_INCLUDES));
     build_hook("src/module/nft/bpf/nft.bpf.c", None);
-    build_extract_stub("src/core/filters/packets/bpf/stub.bpf.c");
 
     for inc in INCLUDE_PATHS.iter() {
         // Useful to avoid to always rebuild on systems that don't use

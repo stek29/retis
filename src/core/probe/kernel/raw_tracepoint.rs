@@ -10,9 +10,11 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use anyhow::{anyhow, bail, Result};
 use libbpf_rs::skel::SkelBuilder;
 
-use crate::core::filters::Filter;
-use crate::core::probe::builder::*;
-use crate::core::probe::*;
+use crate::core::{
+    filters::{packets::filter::prepare_load, register_filter_handler, Filter},
+    probe::builder::*,
+    probe::*,
+};
 
 mod raw_tracepoint_bpf {
     include!("bpf/.out/raw_tracepoint.skel.rs");
@@ -42,7 +44,12 @@ impl ProbeBuilder for RawTracepointBuilder {
         self.map_fds = map_fds;
         self.hooks = hooks;
         self.filters = filters;
-        Ok(())
+
+        register_filter_handler(
+            "raw_tracepoint/probe",
+            libbpf_rs::ProgramType::RawTracepoint,
+            Some(prepare_load),
+        )
     }
 
     fn attach(&mut self, probe: &Probe) -> Result<()> {
@@ -60,12 +67,13 @@ impl ProbeBuilder for RawTracepointBuilder {
         let open_obj = skel.obj;
         reuse_map_fds(&open_obj, &self.map_fds)?;
 
+        replace_filters(&self.filters)?;
+
         let mut obj = open_obj.load()?;
         let prog = obj
             .prog_mut("probe_raw_tracepoint")
             .ok_or_else(|| anyhow!("Couldn't get program"))?;
 
-        replace_filters(prog.as_fd().as_raw_fd(), &self.filters)?;
         let mut links = replace_hooks(prog.as_fd().as_raw_fd(), &self.hooks)?;
         self.links.append(&mut links);
 

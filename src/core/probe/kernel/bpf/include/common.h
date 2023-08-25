@@ -161,16 +161,47 @@ struct {
         __type(value, struct retis_raw_event);
 } hook_event_map SEC(".maps");
 
+#define FILTER_MAX_INSNS 4096
+
+#define __s(v) #v
+#define s(v) __s(v)
+
+/* Reserve FILTER_MAX_INSNS - (instruction placeholder) */
+#define RESERVE_NOP				\
+	".rept " s(FILTER_MAX_INSNS) " - 1;"	\
+	"goto +0x0;"				\
+	".endr;"
+
 /* Always return true. Use 0x40000 as it's typically used by
  * generated filters while 0 means no match, instead.
  */
-__attribute__ ((noinline))
+static __always_inline
 unsigned int packet_filter(struct retis_filter_context *ctx)
 {
+	/* 8 bytes for probe_read_kernel() outcome plus 16 * 4 scratch
+	 * memory locations for cbpf filters. Aligned to u64 boundary. */
+	u64 stack[8 + (16 >> 1)];
+	register struct retis_filter_context *ctx_reg asm("r1");
+	register u64 *fp asm("r9");
+
 	if (!ctx)
 		return 0;
 
-	ctx->ret = 0x40000;
+	ctx_reg = ctx;
+	fp = (u64 *)((void *)stack + sizeof(stack));
+
+	asm volatile (
+		"call 0xdeadbeef;"
+		RESERVE_NOP
+		"*(u32 *)%0 = r0;"
+		: /* out */
+		  "=m" (ctx->ret)
+		: /* in */
+		  "r" (ctx_reg),
+		  "r" (fp)
+		: "r0", "r1", "r2", "r3",
+		  "r4", "r5", "r6", "r7",
+		  "r8", "r9");
 
 	return ctx->ret;
 }
